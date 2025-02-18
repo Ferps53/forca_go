@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -325,6 +326,8 @@ func escolhaMenuFimJogo() bool {
 	switch escolhaMenu {
 
 	case CONTINUAR_JOGO:
+    jogo()
+    break
 	case MENU_INICIAL:
 		return true
 
@@ -370,6 +373,15 @@ func letraFoiUsada(letra rune, letrasUsadas string) bool {
 	return false
 }
 
+func validarAcerto(palpiteLetra rune, palavraSecreta Palavra) bool {
+
+	return strings.ContainsRune(palavraSecreta.Conteudo, palpiteLetra) || strings.ContainsRune(palavraSecreta.Conteudo, unicode.ToUpper(palpiteLetra))
+}
+
+func validarSeGanhou(palpite string, palavraSecreta Palavra) bool {
+	return strings.EqualFold(palpite, palavraSecreta.Conteudo)
+}
+
 func jogo() {
 
 	if buffer.QuantidadeAtual < LIMITE_MINIMO_DE_PALAVRAS {
@@ -382,6 +394,54 @@ func jogo() {
 	palpite := inicializarStringPalpite(int(palavraSecreta.Tamanho))
 	letrasUsadas := ""
 
+	tentativas := 6
+	pontuacao := 0
+	acertosConsecutivos := 0
+	qtdLetrasUsadas := 0
+
+	fmt.Println("Hora de Adivinhar. Você tem 6 tentativas...")
+	fmt.Println(palpite)
+
+	for tentativas > 0 {
+
+		palpiteLetra := '\n'
+		fmt.Print("Adivinhe uma letra da palavra: ")
+		fmt.Scan(&palpiteLetra)
+
+		if letraFoiUsada(palpiteLetra, letrasUsadas) {
+			fmt.Printf("A letra %c já foi utilizada, tente novamente\n", palpiteLetra)
+			continue
+		}
+
+		//Adiciona uma runa a string
+		letrasUsadas += string(palpiteLetra)
+		qtdLetrasUsadas++
+
+		fmt.Printf("%d letras foram usadas\n", qtdLetrasUsadas)
+
+		if validarAcerto(palpiteLetra, palavraSecreta) {
+
+			acertosConsecutivos++
+			pontuacao = (pontuacao + 10) * acertosConsecutivos
+			fmt.Println("Muito bem!")
+			if validarSeGanhou(palpite, palavraSecreta) {
+
+        if (tentativas == 6) {
+
+        }
+
+       if escolhaMenuFimJogo() {
+         return;
+       }
+			}
+		} else {
+			acertosConsecutivos = 0
+			tentativas--
+			pontuacao -= 5
+			fmt.Println("Não foi dessa vez :(")
+		}
+
+	}
 }
 
 func main() {
