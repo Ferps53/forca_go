@@ -1,8 +1,14 @@
 package main
 
 import (
+	"encoding/gob"
 	"fmt"
+	"log"
+	"math/rand/v2"
 	"os"
+	"strconv"
+	"strings"
+	"unicode/utf8"
 )
 
 const LIMITE_MINIMO_DE_PALAVRAS = 10
@@ -30,36 +36,241 @@ const (
 	SAIR_JOGO
 )
 
+// Palavra ---
 type Palavra struct {
-	string  string
-	tamanho int
+	Conteudo string
+	Tamanho  int16
 }
 
-type BufferPalavra struct {
-	bufferArquivo   [LIMITE_MAXIMO_DE_PALAVRAS]Palavra
-	quantidadeAtual int
+func (palavra Palavra) String() string {
+	return palavra.Conteudo + " tamanho: " + strconv.FormatInt(int64(palavra.Tamanho), 10)
 }
 
-func (palavra *Palavra) New(string string) Palavra {
+func calcularTamanhoString(string string) int16 {
+	return int16(utf8.RuneCountInString(string))
+}
+
+func NewPalavra(string string) (Palavra, error) {
 
 	// Atribui a palavra o somente o limite de caractéres
 	// para isso que o :LIMITE_TAMANHO_PALAVRA serve
 
-	if len(string) > LIMITE_TAMANHO_PALAVRA {
-		palavra.string = string[:LIMITE_TAMANHO_PALAVRA]
-	} else {
-		palavra.string = string
+	palavra := new(Palavra)
+	if validarDuplicidade(string) {
+		return *palavra, fmt.Errorf("Essa palavra já foi cadastrada.")
 	}
 
-	palavra.tamanho = len(palavra.string)
-	return *palavra
+	tamanhoPalavra := calcularTamanhoString(string)
+
+	if tamanhoPalavra < 5 {
+		return *palavra, fmt.Errorf("A palavra deve ter no mínimo 5 letras")
+	}
+
+	if tamanhoPalavra > LIMITE_TAMANHO_PALAVRA {
+		palavra.Conteudo = string[:LIMITE_TAMANHO_PALAVRA]
+	} else {
+		palavra.Conteudo = string
+	}
+
+	palavra.Tamanho = tamanhoPalavra
+	return *palavra, nil
 }
 
-func (palavra Palavra) String() string {
-	return palavra.string
+// Palavra ---
+
+// BufferPalavra ---
+type BufferPalavra struct {
+	BufferArquivo   []Palavra
+	QuantidadeAtual int16
 }
+
+func (buffer *BufferPalavra) AdicionarPalavraNoFinal(palavra Palavra) error {
+	if buffer.QuantidadeAtual >= 100 {
+		return fmt.Errorf("Não é possível adicionar mais do que %d palavras", LIMITE_MAXIMO_DE_PALAVRAS)
+	}
+
+	buffer.BufferArquivo = append(buffer.BufferArquivo, palavra)
+	buffer.QuantidadeAtual++
+
+	salvarBufferPalavrasArquivo()
+	return nil
+}
+
+func (buffer *BufferPalavra) AtualizarPalavra(palavra Palavra, index int) {
+
+	buffer.BufferArquivo[index] = palavra
+	salvarBufferPalavrasArquivo()
+}
+
+func (buffer *BufferPalavra) DeletarPalavra(index int) {
+
+	buffer.BufferArquivo = append(buffer.BufferArquivo[:index], buffer.BufferArquivo[index+1:]...)
+	buffer.QuantidadeAtual--
+	salvarBufferPalavrasArquivo()
+}
+
+// BufferPalavra ---
 
 var buffer BufferPalavra = *new(BufferPalavra)
+
+// Arquivo ---
+func lerPalavrasArquivo() {
+
+	arquivo, erro := os.Open(ARQUIVO_PALAVRAS)
+
+	defer arquivo.Close()
+	if erro != nil {
+		arquivo, erro = os.Create(ARQUIVO_PALAVRAS)
+
+		if erro != nil {
+			log.Fatal("Falha ao gerar arquivo:" + erro.Error())
+		}
+
+		lerPalavrasArquivo()
+		return
+	}
+
+	decoder := gob.NewDecoder(arquivo)
+	erro = decoder.Decode(&buffer)
+
+	if erro != nil {
+		fmt.Printf("Falha ao ler palavras\n")
+		fmt.Printf("Ou o arquivo estava vazio  ¯\\_(ツ)_/¯\n\n")
+	}
+}
+
+func salvarBufferPalavrasArquivo() {
+
+	arquivo, erro := os.Create(ARQUIVO_PALAVRAS)
+
+	if erro != nil {
+		log.Fatal("Falha ao abrir arquivo: " + erro.Error())
+	}
+
+	defer arquivo.Close()
+
+	encoder := gob.NewEncoder(arquivo)
+	erro = encoder.Encode(buffer)
+
+	if erro != nil {
+		log.Fatal("Falha de escrita: " + erro.Error())
+	}
+}
+
+// Arquivo ---
+
+func validarDuplicidade(stringUsuario string) bool {
+	if buffer.QuantidadeAtual == 0 {
+		return false
+	}
+
+	for i := 0; i < int(buffer.QuantidadeAtual); i++ {
+
+		stringArquivo := buffer.BufferArquivo[i].Conteudo
+
+		if strings.EqualFold(stringUsuario, stringArquivo) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func lerInputUser() string {
+
+	string := ""
+
+	fmt.Print("Escreva uma palavra: ")
+	fmt.Scan(&string)
+
+	return string
+}
+
+func adicionarPalavra() {
+
+	stringUsuario := lerInputUser()
+
+	palavra, error := NewPalavra(stringUsuario)
+	if error != nil {
+		fmt.Println(error.Error())
+		return
+	}
+
+	buffer.AdicionarPalavraNoFinal(palavra)
+}
+
+func lerInputUserIndex() int8 {
+	index := 0
+
+	fmt.Print("Selecione o código de uma palavra: ")
+	fmt.Scan(&index)
+
+	return int8(index)
+}
+
+func atualizarPalavra() {
+
+	if buffer.QuantidadeAtual == 0 {
+		fmt.Println("Não existem palavras cadastradas para atualizar, tente cadastrar uma palavra")
+		return
+	}
+
+	exibirPalavras()
+	index := lerInputUserIndex()
+
+	if index <= 0 || int16(index) > buffer.QuantidadeAtual {
+		fmt.Println("O código inserido está inválido, tente novamente")
+
+		atualizarPalavra()
+		return
+	}
+
+	palavra, erro := NewPalavra(lerInputUser())
+
+	if erro != nil {
+		fmt.Println(erro.Error())
+		return
+	}
+
+	buffer.AtualizarPalavra(palavra, int(index)-1)
+}
+
+func deletarPalavras() {
+
+	if buffer.QuantidadeAtual == 0 {
+		fmt.Println("Não existem palavras cadastradas para deletar, tente cadastrar uma palavra")
+		return
+	}
+
+	exibirPalavras()
+	index := lerInputUserIndex()
+
+	if index <= 0 || int16(index) > buffer.QuantidadeAtual {
+		fmt.Println("O código inserido está inválido, tente novamente")
+
+		deletarPalavras()
+		return
+	}
+
+	buffer.DeletarPalavra(int(index - 1))
+}
+
+func exibirPalavras() {
+
+	if buffer.QuantidadeAtual == 0 {
+		fmt.Println("Em questão de palavras, não temos palavras")
+		return
+	}
+
+	for i, palavra := range buffer.BufferArquivo {
+
+		if palavra.Tamanho == 0 {
+			return
+		}
+
+		fmt.Printf("%d. %s\n", i+1, palavra.Conteudo)
+	}
+}
 
 func escolhaMenuPrincipal() int {
 
@@ -87,7 +298,7 @@ func escolhaMenuPrincipal() int {
 
 func validaEscolhaMenu(escolhaMenu int) error {
 
-	if escolhaMenu < 0 || escolhaMenu > 6 {
+	if escolhaMenu < NOVO_JOGO || escolhaMenu > SAIR {
 		return fmt.Errorf("Insira uma opção válida!")
 	}
 
@@ -117,7 +328,7 @@ func escolhaMenuFimJogo() bool {
 	case MENU_INICIAL:
 		return true
 
-	default:
+	case SAIR_JOGO:
 		fmt.Println("Saindo... Até mais")
 		os.Exit(0)
 	}
@@ -125,23 +336,75 @@ func escolhaMenuFimJogo() bool {
 	return false
 }
 
+func definirPalavraAleatoria() Palavra {
+
+	randomNumber := rand.Int() % int(buffer.QuantidadeAtual)
+	palavraSecreta := buffer.BufferArquivo[randomNumber]
+
+	return palavraSecreta
+}
+
+func inicializarStringPalpite(tamanhoPalavraSecreta int) string {
+
+	stringPalpite := ""
+	for i := 0; i > tamanhoPalavraSecreta; i++ {
+		stringPalpite += "_"
+
+	}
+	return stringPalpite
+}
+
+func letraFoiUsada(letra rune, letrasUsadas string) bool {
+
+	if letrasUsadas == "" {
+		return false
+	}
+
+	for _, letraUsada := range letrasUsadas {
+
+		if letra == letraUsada {
+			return true
+		}
+	}
+
+	return false
+}
+
+func jogo() {
+
+	if buffer.QuantidadeAtual < LIMITE_MINIMO_DE_PALAVRAS {
+		fmt.Printf("São necessárias no mínimo %d palavras para poder jogar\n", LIMITE_MINIMO_DE_PALAVRAS)
+		fmt.Printf("No momento faltam: %d\n", LIMITE_MINIMO_DE_PALAVRAS-buffer.QuantidadeAtual)
+		return
+	}
+
+	palavraSecreta := definirPalavraAleatoria()
+	palpite := inicializarStringPalpite(int(palavraSecreta.Tamanho))
+	letrasUsadas := ""
+
+}
+
 func main() {
 
-	palavra := new(Palavra)
-	palavra.New("Jailson")
-	fmt.Println(palavra)
-
+	lerPalavrasArquivo()
 	for {
 		escolha := escolhaMenuPrincipal()
 
 		switch escolha {
-
 		case NOVO_JOGO:
+			jogo()
+
 		case VER_PALAVRAS:
+			exibirPalavras()
+
 		case ADICIONAR_PALAVRAS:
+			adicionarPalavra()
+
 		case ATUALIZAR_PALAVRAS:
+			atualizarPalavra()
+
 		case DELETAR_PALAVRAS:
-			break
+			deletarPalavras()
 
 		case SAIR:
 			fmt.Println("Saindo... Até mais!")
